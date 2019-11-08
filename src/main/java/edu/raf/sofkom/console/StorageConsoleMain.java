@@ -1,17 +1,16 @@
 package edu.raf.sofkom.console;
 
 import edu.raf.sofkom.FileStorage;
+import edu.raf.sofkom.StorageFactory;
+import edu.raf.sofkom.UnsuportedTypeException;
 import edu.raf.sofkom.connect.ConnectionUtils;
-import edu.raf.sofkom.localstorage.LocalStorage;
 import edu.raf.sofkom.privileges.Privilege;
 import edu.raf.sofkom.privileges.PrivilegeException;
-import edu.raf.sofkom.users.ValidationException;
 
 
-import javax.swing.*;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
-import java.nio.file.Paths;
+import java.util.HashMap;
 import java.util.Scanner;
 import java.util.StringTokenizer;
 
@@ -20,12 +19,18 @@ public class StorageConsoleMain {
 
 
 
-    public static void main(String[] args) throws ClassNotFoundException, NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException, IOException, PrivilegeException, ValidationException {
+    public static void main(String[] args)  {
 
-        FileStorage fs ;
+       FileStorage fs = null;
+       //fs = (LocalStorage) Class.forName("edu.raf.sofkom.localstorage.LocalStorage").getDeclaredConstructor().newInstance();
+        try {
+            fs = StorageFactory.getStorage("edu.raf.sofkom.localstorage.LocalStorage");
+        } catch (ClassNotFoundException | NoSuchMethodException | IllegalAccessException | InvocationTargetException | InstantiationException e) {
+            System.err.println("Internal error: Loading failed.");
+            System.exit(0);
+        }
 
-
-        fs = (LocalStorage) Class.forName("edu.raf.sofkom.localstorage.LocalStorage").getDeclaredConstructor().newInstance();
+        //   fs = fs.objCreator();//(FileStorage) Class.forName("edu.raf.sofkom.LocalStorage").getDeclaredConstructor().newInstance();
 
 
         Scanner sc = new Scanner(System.in);
@@ -34,8 +39,13 @@ public class StorageConsoleMain {
 
         if(args[0].equals("-i")){
             System.out.println(args[0] + args[1]);
-            fs.init(args[1],args[2]);
-           System.out.println(fs.getPathToStorage());
+            try {
+                fs.init(args[1],args[2]);
+                System.out.println("Storage initialized @ "+ fs.getPathToStorage());
+            } catch (IOException e) {
+               System.err.println("Was unable to initialize storage location.");
+               System.exit(0);
+            }
 
            System.out.println("Username:");
            String uName = sc.nextLine();
@@ -52,28 +62,34 @@ public class StorageConsoleMain {
             String uName = sc.nextLine();
             System.out.println("Password:");
             String password = sc.nextLine();
-            if(!ConnectionUtils.connect(args[1],uName, password, fs)) {
-                System.err.println("Storage does not exist at specified location.");
-                return;
+            try {
+                if(!ConnectionUtils.connect(args[1],uName, password, fs)) {
+                    System.err.println("Storage does not exist at specified location.");
+                    return;
+                }
+            } catch (IOException e) {
+                System.err.println("Connection error");
             }
         }
 
 
 
         String menu =   "\nCommands:\n_________\n\n"+
-                        "str <path to> <path from> - Store\n" +
-                        "ret <path from> - Retrieve\n"+
-                        "del <path toDelete> - Delete\n"+
-                        "dcn - Disconnect\n";
-        String suMenu = menu+"\nSuperCommands:\n_________\n\n"+
-                        "adduser <username> <password>- Add user\n"+
-                        "userinfo <username> - See user information"+
-                        "permit <privilege> <username> - Permit to user(Set privileges)\n"+
-                        "forbid <privilege <username> - Forbid to user(Un-set privileges)\n"+
-                        "deluser <username> - Delete User\n"+
-                        "restype <extension> - Restrict filetype."+
-                         "unrestype <extension> - Restrict filetype.";
+                "str <path to> <path from> - Store\n" +
+                "ret <path from> - Retrieve\n"+
+                "del <path toDelete> - Delete\n"+
+                "dcn - Disconnect\n"+
+                "strm <path to> <path from> - Store file with meta\n"+
+                "peekm <path to> - View file meta\n";
 
+        String suMenu = menu+"\nSuperCommands:\n_________\n\n"+
+                "adduser <username> <password>- Add user\n"+
+                "userinfo <username> - See user information"+
+                "permit <privilege> <username> - Permit to user(Set privileges)\n"+
+                "forbid <privilege <username> - Forbid to user(Un-set privileges)\n"+
+                "deluser <username> - Delete User\n"+
+                "restype <extension> - Restrict filetype."+
+                "unrestype <extension> - Restrict filetype.";
 
 
         if(fs.getStorageUsers().ifSuperUser())
@@ -194,16 +210,49 @@ public class StorageConsoleMain {
                 "str <path to> <path from> - Store\n" +
                 "ret <path from> - Retrieve\n" +
                 "del <path toDelete> - Delete\n" +
-                "dcn - Disconnect\n";
+                "dcn - Disconnect\n"+
+                "strm <path to> <path from> - Store file with meta\n"+
+                "peekm <path to> - View file meta\n";;
 
 
+        System.out.println("***"+args[args.length-1] + " " +args[0]+"***");
         try {
             if (command.equals("str")) {
+                for (int i = 0; i < args.length-1; i++) {
+                    if(args[args.length-1] == null)
+                        args[args.length-1] = "";
+                    fs.store(args[args.length-1], args[i]);
+                }
+            }
+            if(command.equals("strm")){
+                HashMap<String,String> meta = new HashMap<>();
+                boolean more=true;
+                Scanner sc = new Scanner(System.in);
+                String key,value;
+                while(more){
+                    System.out.println("key:");
+                    key = sc.nextLine();
+                    System.out.println("value:");
+                    value=sc.nextLine();
+                    meta.put(key,value);
+                    System.out.println(meta.toString());
 
-               // for (int i = 1; i < args.length-1; i++) {
+                    System.out.println("More (y/n)?");
+                    key=sc.nextLine();
+                    if(key.trim().equals("y"))
+                        continue;
+                    else
+                        break;
+                }
 
-                    fs.store(Paths.get( args[2]),Paths.get( args[1]));
-                //}
+                if(args[1] == null)
+                    args[1] = "";
+
+                fs.store(args[1],args[0],meta);
+            }
+            if(command.equals("peekm")){
+                String metastr = fs.readFileMeta(args[0]);
+                System.out.println(metastr);
             }
             if (command.equals("ret")) {
                 fs.retrieve(args[0]);
@@ -211,10 +260,10 @@ public class StorageConsoleMain {
             if (command.equals("del")) {
                 fs.delete(args[0]);
             }
-        } catch (PrivilegeException e) {
+        } catch (PrivilegeException | UnsuportedTypeException e) {
             System.err.println("Forbidden due to the lack of privileges.");
         } catch (IOException e) {
-            System.err.println(e.getCause().toString());
+            System.out.println("IOEX");
         }
 
         try {
@@ -239,7 +288,10 @@ public class StorageConsoleMain {
                 "str <path to> <path from> - Store\n" +
                 "ret <path from> - Retrieve\n"+
                 "del <path toDelete> - Delete\n"+
-                "dcn - Disconnect\n";
+                "dcn - Disconnect\n"+
+                "strm <path to> <path from> - Store file with meta\n"+
+                "peekm <path to> - View file meta\n";
+
         String suMenu = menu+"\nSuperCommands:\n_________\n\n"+
                 "adduser <username> <password>- Add user\n"+
                 "userinfo <username> - See user information"+
@@ -250,13 +302,44 @@ public class StorageConsoleMain {
                 "unrestype <extension> - Restrict filetype.";
 
         System.out.println("***"+args[args.length-1] + " " +args[0]+"***");
-        try {
+        exec(fs, command, args);
+       /* try {
             if (command.equals("str")) {
                 for (int i = 0; i < args.length-1; i++) {
                     if(args[args.length-1] == null)
                         args[args.length-1] = "";
                     fs.store(args[args.length-1], args[i]);
                 }
+            }
+            if(command.equals("strm")){
+                HashMap<String,String> meta = new HashMap<>();
+                boolean more=true;
+                Scanner sc = new Scanner(System.in);
+                String key,value;
+                while(more){
+                    System.out.println("key:");
+                    key = sc.nextLine();
+                    System.out.println("value:");
+                    value=sc.nextLine();
+                    meta.put(key,value);
+                    System.out.println(meta.toString());
+
+                    System.out.println("More (y/n)?");
+                    key=sc.nextLine();
+                    if(key.trim().equals("y"))
+                        continue;
+                    else
+                        break;
+                }
+
+                if(args[1] == null)
+                    args[1] = "";
+
+                fs.store(args[1],args[0],meta);
+            }
+            if(command.equals("peekm")){
+                String metastr = fs.readFileMeta(args[0]);
+                System.out.println(metastr);
             }
             if (command.equals("ret")) {
                 fs.retrieve(args[0]);
@@ -278,7 +361,7 @@ public class StorageConsoleMain {
             }
         } catch (IOException e) {
             e.printStackTrace();
-        }
+        }*/
 
 
         try{
